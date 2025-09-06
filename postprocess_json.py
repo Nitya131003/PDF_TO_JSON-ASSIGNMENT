@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 postprocess_json.py
 
@@ -23,7 +22,6 @@ DISCLAIMER_PATTERNS = [
 ]
 
 def is_disclaimer(text: str) -> bool:
-    """Check if text matches known disclaimer/footer patterns."""
     low = text.lower()
     return any(re.search(p, low) for p in DISCLAIMER_PATTERNS)
 
@@ -42,12 +40,10 @@ def clean_json(input_path, output_path):
         for item in page.get("content", []):
             t = item.get("type")
 
-            # remove disclaimers / footers
             if t in ("paragraph", "heading") and item.get("text"):
                 if is_disclaimer(item["text"]):
                     continue
 
-            # update section / subsection tracking
             if t == "heading":
                 if item.get("level") == 1:
                     last_section = item["text"]
@@ -63,15 +59,12 @@ def clean_json(input_path, output_path):
                 if not text:
                     continue
 
-                # assign section/subsection if missing
                 if not item.get("section"):
                     item["section"] = last_section
                 if not item.get("sub_section"):
                     item["sub_section"] = last_subsection
 
-                # merge with buffer if previous para exists
                 if buffer_para:
-                    # if same section/subsection, merge
                     if (buffer_para.get("section") == item.get("section") and
                         buffer_para.get("sub_section") == item.get("sub_section")):
                         buffer_para["text"] += " " + text
@@ -82,14 +75,12 @@ def clean_json(input_path, output_path):
                     buffer_para = item
                 continue
 
-            # flush buffer before adding tables/images
             if buffer_para:
                 new_content.append(buffer_para)
                 buffer_para = None
 
             new_content.append(item)
 
-        # flush last buffer paragraph
         if buffer_para:
             new_content.append(buffer_para)
 
