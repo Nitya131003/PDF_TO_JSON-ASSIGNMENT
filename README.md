@@ -17,7 +17,7 @@ python -m venv venv
 
 - **Windows:**
 ```bash
-source venv\Scripts\activate
+venv\Scripts\activate
 ```
 
 ---
@@ -56,8 +56,11 @@ The `pdf_to_json.py` script is the main driver that parses PDF files into struct
 4. **Extract paragraphs** and associate them with the current section/sub-section.  
 5. **Extract tables**:  
    - Preferably using Camelot (stream/lattice)  
-   - Fallback to pdfplumber if Camelot fails  
-6. **Extract images** and optionally run OCR for charts using `pytesseract`.  
+   - Fallback to pdfplumber if Camelot fails
+   - Each table includes `"table_data"` and `"description": None` 
+6. **Extract images**:
+   - Heuristically classify as chart (if OCR detects text or image occupies significant page area) or regular image.
+   - Optional OCR for charts using pytesseract.  
 7. **Assemble the extracted content into a structured JSON** with the format:
 
 ```json
@@ -68,8 +71,9 @@ The `pdf_to_json.py` script is the main driver that parses PDF files into struct
       "content": [
         {"type": "heading", "level": 1, "text": "..."},
         {"type": "paragraph", "section": "...", "sub_section": "...", "text": "..."},
-        {"type": "table", "section": "...", "sub_section": "...", "table_data": [...]},
-        {"type": "chart", "section": "...", "sub_section": "...", "image_path": "...", "description": "..."}
+        {"type": "table", "section": "...", "sub_section": "...", "description": null, "table_data": [...]},
+        {"type": "chart", "section": "...", "sub_section": "...", "image_path": "...", "description": "..."},
+        {"type": "image", "section": null, "sub_section": null, "image_path": "..."}
       ]
     }
   ]
