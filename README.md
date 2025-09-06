@@ -11,8 +11,11 @@ It is recommended to use a virtual environment to manage dependencies.
 **Command to create a virtual environment:**
 ```bash
 python -m venv venv
-## Activate the Virtual Environment
+```
+
+**Activate the Virtual Environment:**
 
 - **Windows:**
 ```bash
 source venv\Scripts\activate
+```
