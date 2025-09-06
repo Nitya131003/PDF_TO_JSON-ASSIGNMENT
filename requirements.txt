@@ -1,0 +1,5 @@
+pymupdf 
+pdfplumber 
+pillow 
+pytesseract 
+camelot-py[cv]
