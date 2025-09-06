@@ -19,3 +19,25 @@ python -m venv venv
 ```bash
 source venv\Scripts\activate
 ```
+
+---
+
+## 2. Install Dependencies
+
+Install the required Python packages using `pip`:
+
+```bash
+pip install pymupdf pdfplumber pytesseract Pillow camelot-py[cv] 
+```
+
+## Packages and Their Purpose
+
+- **pymupdf**: Provides `fitz` module to read and extract text, images, and metadata from PDFs.  
+
+- **pdfplumber**: Optional PDF parser, primarily used for table extraction when Camelot fails.  
+
+- **pytesseract**: Python wrapper for Tesseract OCR, used to extract text from images/charts inside PDFs.  
+
+- **Pillow**: Python Imaging Library, required by `pytesseract` to handle images.  
+
+- **camelot-py[cv]**: Extracts tables from PDFs using stream or lattice methods; `[cv]` enables OpenCV for better table detection.  
