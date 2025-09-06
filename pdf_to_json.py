@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 pdf_to_json.py
 
@@ -64,20 +63,18 @@ except Exception:
     pytesseract = None
     Image = None
 
-# camelot might be heavy / optional
 try:
     import camelot
 except Exception:
     camelot = None
 
-# ---------- Helpers ----------
+#Helpers
 
 def safe_mkdir(path):
     if path and not os.path.exists(path):
         os.makedirs(path, exist_ok=True)
 
 def span_size_stats(spans):
-    """Return median and mean font size from spans list (spans are dicts with 'size')."""
     sizes = [s.get("size", 0) for s in spans if s.get("size")]
     if not sizes:
         return 0, 0
@@ -91,19 +88,16 @@ def normalize_text(t):
     return " ".join(t.replace("\u2013", "-").replace("\u2014", "-").split())
 
 def extract_tables_with_camelot(pdf_path, page_no):
-    """Try to extract tables using camelot for a single page. Returns list of tables (list of lists)."""
     if camelot is None:
         return []
     try:
-        # camelot expects 1-based pages string
-        tables = camelot.read_pdf(pdf_path, pages=str(page_no), flavor='stream')  # try stream first
+        tables = camelot.read_pdf(pdf_path, pages=str(page_no), flavor='stream')  
         results = []
         for t in tables:
             df = t.df.fillna("").values.tolist()
             results.append(df)
         return results
     except Exception as e:
-        # try lattice fallback
         try:
             tables = camelot.read_pdf(pdf_path, pages=str(page_no), flavor='lattice')
             results = []
@@ -115,7 +109,6 @@ def extract_tables_with_camelot(pdf_path, page_no):
             return []
 
 def extract_tables_with_pdfplumber(pdf_path, page_index):
-    """Extract tables using pdfplumber page.extract_tables() - page_index is 0-based."""
     if pdfplumber is None:
         return []
     try:
@@ -124,7 +117,6 @@ def extract_tables_with_pdfplumber(pdf_path, page_index):
             tables = page.extract_tables()
             results = []
             for t in tables:
-                # Each t is a list of rows (list of cell texts)
                 cleaned = [[cell if cell is not None else "" for cell in row] for row in t]
                 results.append(cleaned)
             return results
@@ -132,17 +124,14 @@ def extract_tables_with_pdfplumber(pdf_path, page_index):
         return []
 
 def ocr_image_save_and_describe(image_bytes, out_path, do_ocr=True):
-    """Save image bytes (from PyMuPDF pixmap.tobytes) to out_path; return path and OCR text if available."""
     try:
         img = Image.open(image_bytes) if isinstance(image_bytes, (str, bytes)) else None
     except Exception:
         img = None
 
-    # If image_bytes is Pillow Image already (caller may pass)
     if Image and isinstance(image_bytes, Image.Image):
         img = image_bytes
 
-    # If image_bytes is raw bytes, convert to PIL via BytesIO
     if img is None:
         try:
             from io import BytesIO
@@ -151,7 +140,6 @@ def ocr_image_save_and_describe(image_bytes, out_path, do_ocr=True):
             img = None
 
     if img is None:
-        # fallback: write raw bytes
         try:
             with open(out_path, "wb") as f:
                 f.write(image_bytes)
@@ -166,7 +154,6 @@ def ocr_image_save_and_describe(image_bytes, out_path, do_ocr=True):
         except Exception:
             return None, None
 
-    # Save PIL image
     try:
         img.save(out_path)
     except Exception:
@@ -184,7 +171,7 @@ def ocr_image_save_and_describe(image_bytes, out_path, do_ocr=True):
             ocr_text = None
     return out_path, ocr_text
 
-# ---------- Main extraction logic ----------
+# Main extraction logic 
 
 def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=False):
     """
@@ -212,13 +199,10 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
         blocks = []
         if text_dict:
             raw_blocks = text_dict.get("blocks", [])
-            # accumulate spans and text by block
             for b in raw_blocks:
                 if b.get("type") != 0:
-                    # non-text block (image, etc.) keep separately
                     blocks.append(b)
                     continue
-                # each text block has "lines" -> "spans"
                 block_spans = []
                 block_texts = []
                 for line in b.get("lines", []):
@@ -229,7 +213,6 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
                             block_texts.append(span_text)
                 block_text = normalize_text(" ".join(block_texts).strip())
                 if block_text:
-                    # store aggregated block with spans info
                     combined_spans = block_spans
                     blocks.append({
                         "type": "text",
@@ -238,13 +221,11 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
                         "bbox": b.get("bbox")
                     })
         else:
-            # fallback: extract simple text
             simple_text = page.get_text("text")
             if simple_text.strip():
                 blocks.append({"type":"text", "text": normalize_text(simple_text), "spans": [], "bbox": None})
 
         # 2) Determine heading sizes per page
-        # collect all span sizes
         all_spans = []
         for b in blocks:
             if b.get("type") == "text":
@@ -253,17 +234,12 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
                         all_spans.append(s)
         median_size, mean_size = span_size_stats(all_spans)
 
-        # threshold: treat spans with size >= median + 2 (or size >= mean*1.15) as headings
         headings = []
         heading_threshold = max(median_size + 2, mean_size * 1.12) if median_size else mean_size * 1.12 if mean_size else 0
 
-        # We'll build a stack of sections based on decreasing font sizes
-        # For simplicity: largest sizes -> sections, slightly smaller -> sub-sections
-        # We'll process blocks in visual order: page.get_text('blocks') order is roughly visual
         current_section = None
         current_subsection = None
 
-        # Small helper: add paragraph object
         def add_paragraph(text, section, subsection):
             if not text or not text.strip():
                 return
@@ -274,23 +250,17 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
                 "text": text
             })
 
-        # Process text blocks: decide if heading or paragraph
         for b in blocks:
             if b.get("type") != "text":
                 continue
             text = b.get("text", "").strip()
             if not text:
                 continue
-            # determine block's representative size (max of spans sizes)
             sizes = [s.get("size", 0) for s in b.get("spans", []) if s.get("size")]
             rep_size = max(sizes) if sizes else 0
 
-            # decision
             if rep_size and rep_size >= heading_threshold and len(text.split()) <= 12:
-                # treat as heading (short)
-                # decide heading level by how big rep_size is relative to median/mean
                 if rep_size >= (median_size * 1.5 if median_size else rep_size):
-                    # level 1 heading
                     current_section = text
                     current_subsection = None
                     page_dict["content"].append({
@@ -299,7 +269,6 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
                         "text": text
                     })
                 else:
-                    # level 2 heading/subsection
                     current_subsection = text
                     page_dict["content"].append({
                         "type": "heading",
@@ -308,7 +277,6 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
                         "section": current_section
                     })
             else:
-                # paragraph
                 add_paragraph(text, current_section, current_subsection)
 
         # 3) Extract tables: try camelot first if available, else pdfplumber
@@ -325,15 +293,12 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
                 tables = []
 
         for tbl in tables:
-            # Try to attach to most recent section/subsection context by scanning page_dict content
             sec = None
             sub = None
-            # find last heading or paragraph section on page
             for item in reversed(page_dict["content"]):
                 if item.get("type") == "heading" and item.get("level") == 1:
                     sec = item.get("text")
                     break
-            # find last subsection
             for item in reversed(page_dict["content"]):
                 if item.get("type") == "heading" and item.get("level") == 2:
                     sub = item.get("text")
@@ -354,7 +319,6 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
                 pix = fitz.Pixmap(doc, xref)
             except Exception:
                 continue
-            # determine if color or alpha; convert to PNG
             img_ext = "png"
             img_name = f"page{page_number}_img{img_index + 1}.{img_ext}"
             img_path = None
@@ -369,7 +333,6 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
                         if pix0 is not pix:
                             pix0 = None
                 else:
-                    # save to temp in working dir
                     img_path = img_name
                     pix.save(img_path)
             except Exception:
@@ -379,7 +342,6 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
                 except Exception:
                     img_path = None
 
-            # run OCR if requested and pytesseract available
             ocr_text = None
             if do_ocr and pytesseract is not None and img_path is not None:
                 try:
@@ -388,15 +350,12 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
                 except Exception:
                     ocr_text = None
 
-            # Heuristic: if OCR yields text, or the image is large -> treat as chart/figure
             chart_like = False
             if ocr_text:
                 chart_like = True
             else:
-                # treat any image larger than a fraction of the page as chart/figure
                 bbox = img[5] if len(img) > 5 else None
                 if bbox:
-                    # bbox is a rect in PDF coordinates; we can approximate by area
                     try:
                         w = float(bbox[2]) - float(bbox[0])
                         h = float(bbox[3]) - float(bbox[1])
@@ -405,13 +364,12 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
 
                     page_area = page.rect.width * page.rect.height
                     try:
-                        if (w * h) / page_area > 0.03:  # >3% of page area
+                        if (w * h) / page_area > 0.03:
                             chart_like = True
                     except Exception:
                         chart_like = True
 
             if chart_like:
-                # attach to last section/subsection context
                 sec = None
                 sub = None
                 for item in reversed(page_dict["content"]):
@@ -427,7 +385,6 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
                     "description": ocr_text
                 })
             else:
-                # attach as generic image (non-chart) - optional
                 page_dict["content"].append({
                     "type": "image",
                     "section": None,
@@ -442,7 +399,6 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
 
         # 5) If no headings were detected at all, try lightweight section inference via keywords
         if not any(item.get("type") == "heading" for item in page_dict["content"]):
-            # quick pass: split paragraphs by lines and look for common section words
             new_content = []
             for item in page_dict["content"]:
                 if item["type"] == "paragraph":
@@ -458,7 +414,6 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
                 new_content.append(item)
             page_dict["content"] = new_content
             
-        # count extracted items for summary
         para_count = sum(1 for c in page_dict["content"] if c["type"] == "paragraph")
         table_count = sum(1 for c in page_dict["content"] if c["type"] == "table")
         chart_count = sum(1 for c in page_dict["content"] if c["type"] == "chart")
@@ -466,33 +421,29 @@ def parse_pdf_to_json(pdf_path, output_json_path, image_output_dir=None, do_ocr=
         image_count = sum(1 for c in page_dict["content"] if c["type"] == "image")
         
         print(f"Page {page_number}: {para_count} paragraphs, {heading_count} headings, "f"{table_count} tables, {chart_count} charts, {image_count} other images")
-        # append page
         result["pages"].append(page_dict)
-        
-    # ---- Final summary across all pages ----
+
     total_paras = sum(len([c for c in page["content"] if c["type"] == "paragraph"]) for page in result["pages"])
     total_headings = sum(len([c for c in page["content"] if c["type"] == "heading"]) for page in result["pages"])
     total_tables = sum(len([c for c in page["content"] if c["type"] == "table"]) for page in result["pages"])
     total_charts = sum(len([c for c in page["content"] if c["type"] == "chart"]) for page in result["pages"])
     total_images = sum(len([c for c in page["content"] if c["type"] == "image"]) for page in result["pages"])
     
-    print("\n===== Extraction Summary =====")
+    print("\nExtraction Summary")
     print(f"Total pages:     {len(result['pages'])}")
     print(f"Paragraphs:      {total_paras}")
     print(f"Headings:        {total_headings}")
     print(f"Tables:          {total_tables}")
     print(f"Charts:          {total_charts}")
     print(f"Other images:    {total_images}")
-    print("==============================\n")
+    print("\n")
 
-
-    # write JSON
     with open(output_json_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
 
     return result
 
-# ---------- CLI ----------
+# CLI 
 
 def main():
     parser = argparse.ArgumentParser(
@@ -521,7 +472,6 @@ def main():
         print(f"ERROR: PDF file not found: {pdf_path}")
         sys.exit(2)
 
-    # Clean image folder before every run
     if os.path.isdir(images_dir):
         import shutil
         shutil.rmtree(images_dir)
@@ -534,7 +484,6 @@ def main():
         )
         print(f"Done. Raw JSON written to {json_path}")
 
-        # Call post-processing automatically
         from postprocess_json import clean_json
         cleaned_json_path = json_path.replace(".json", "_cleaned.json")
         clean_json(json_path, cleaned_json_path)
